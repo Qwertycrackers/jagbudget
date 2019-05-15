@@ -14,6 +14,8 @@ use std::fs::File;
 use std::io;
 use std::collections::HashMap;
 
+type BoxError = Box<std::error::Error>
+
 #[derive(Deserialize)]
 struct Expense {
   amount: u32,
@@ -91,7 +93,7 @@ fn rectify_db(db: &Connection) -> () {
 }
 
 fn init_db(db: &Connection) -> () {
-  // TODO
+  unimplemented!()
 }
 
 fn is_db_correct(db: &Connection) -> bool {
@@ -101,6 +103,30 @@ fn is_db_correct(db: &Connection) -> bool {
 fn parse_into_sqlite<R: io::Read>( mut file: R, db: &Connection) -> Result<(), Box<std::error::Error>> {
   let mut bytes = Vec::new();
   file.read_to_end(&mut bytes)?;
-  unimplemented!()
+  toml::de::from_slice<Expense>(&bytes)
+    .and_then(|expense| expense.insert_sqlite(db))
+    .map_err(|_| {
+      toml::de::from_slice<Income>(&bytes)
+        .and_then(|income| income.insert_sqlite(db))
+        .map_err(|_| {
+          toml::de::from_slice<Budget>(&bytes)
+            .and_then(|budget| budget.insert_sqlite(db))
+        })
+    })
 }
 
+trait InsertSql {
+  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError>
+}
+
+impl InsertSql for Expense {
+
+}
+
+impl InsertSql for Income {
+
+}
+
+impl InsertSql for Budget {
+
+}
