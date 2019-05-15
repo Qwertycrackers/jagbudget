@@ -77,9 +77,10 @@ fn main() -> Result<(), Box<std::error::Error>> {
     file_names.for_each( |f| {
       let file = File::open(f);
       match file.map(|x| parse_into_sqlite( x, &db)) {
-        None => eprint!("File was badly-formed or couldn't be opened: {}", f),
+        Err(_) => eprint!("File was badly-formed or couldn't be opened: {}", f.to_string_lossy()),
         _ => (), // No need to print an error
-    );
+      }
+    });
   }
   // TODO: Produce report 
   Ok(())
