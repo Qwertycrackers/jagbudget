@@ -3,13 +3,51 @@ extern crate serde_derive;
 extern crate toml;
 extern crate clap;
 extern crate rusqlite;
+extern crate chrono;
 
+use chrono::naive::{NaiveDate};
 use serde::{Serialize, Deserialize};
 use serde_derive::{Serialize, Deserialize};
 use clap::{Arg, App, SubCommand};
 use rusqlite::{Connection};
 use std::fs::File;
 use std::io;
+use std::collections::HashMap;
+
+#[derive(Deserialize)]
+struct Expense {
+  amount: u32,
+  category: String,
+  detail: String,
+  day: NaiveDate,
+}
+
+#[derive(Deserialize)]
+struct Income {
+  amount: u32,
+  category: String,
+  day: NaiveDate,
+}
+
+/// Configuration of budgetary targets for a time period.
+#[derive(Deserialize)]
+struct Budget {
+  /// The target proportion and flat amounts of savings
+  savings: Alloc,
+  /// The target proportion and flat amounts of spending
+  expenditure: Alloc,
+  /// Spending allocations by category
+  spend_categories: Option<HashMap<String, Alloc>>,
+}
+
+/// An allocation of money.
+#[derive(Deserialize)]
+struct Alloc {
+  /// This allocation as a proportion. Min or max based on context.
+  rate: f32,
+  /// This allocation as a flat value in cents. Min or max based on context.
+  flat: u32,
+}
 
 fn main() -> Result<(), Box<std::error::Error>> {
   // Parse args
@@ -36,7 +74,12 @@ fn main() -> Result<(), Box<std::error::Error>> {
   // Ingest expense records
   let file_names = matches.values_of_os("files");
   if let Some(file_names) = file_names {
-    file_names.for_each(|f| parse_into_sqlite( File::open(f).unwrap(), &db));
+    file_names.for_each( |f| {
+      let file = File::open(f);
+      match file.map(|x| parse_into_sqlite( x, &db)) {
+        None => eprint!("File was badly-formed or couldn't be opened: {}", f),
+        _ => (), // No need to print an error
+    );
   }
   // TODO: Produce report 
   Ok(())
@@ -47,15 +90,16 @@ fn rectify_db(db: &Connection) -> () {
 }
 
 fn init_db(db: &Connection) -> () {
-
+  // TODO
 }
 
-fn is_db_correct(db: &Connection) -> () {
-
+fn is_db_correct(db: &Connection) -> bool {
+  unimplemented!()
 }
 
-fn parse_into_sqlite<R: io::Read>( file: R, db: &Connection) -> Result<(), Box<std::error::Error>> {
-
+fn parse_into_sqlite<R: io::Read>( mut file: R, db: &Connection) -> Result<(), Box<std::error::Error>> {
+  let mut bytes = Vec::new();
+  file.read_to_end(&mut bytes)?;
+  unimplemented!()
 }
-
 
