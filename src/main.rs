@@ -51,7 +51,7 @@ struct Alloc {
   flat: u32,
 }
 
-fn main() -> Result<(), Box<std::error::Error>> {
+fn main() -> Result<(), BoxError> {
   // Parse args
   let matches = App::new("JAG Budget")
     .version(option_env!("CARGO_PKG_VERSION").unwrap_or("unknown"))
@@ -93,23 +93,35 @@ fn rectify_db(db: &Connection) -> () {
 }
 
 fn init_db(db: &Connection) -> () {
-  unimplemented!()
+  db.execute_batch("
+    CREATE TABLE expense (
+      cost INTEGER,
+      category TEXT,
+      detail TEXT,
+      day DATE
+    );
+    CREATE TABLE income (
+      amount INTEGER,
+      category TEXT,
+      day DATE
+    );
+  ").unwrap();
 }
 
 fn is_db_correct(db: &Connection) -> bool {
-  unimplemented!()
+  false // Always re-initialize db
 }
 
-fn parse_into_sqlite<R: io::Read>( mut file: R, db: &Connection) -> Result<(), Box<std::error::Error>> {
+fn parse_into_sqlite<R: io::Read>( mut file: R, db: &Connection) -> Result<(), BoxError> {
   let mut bytes = Vec::new();
   file.read_to_end(&mut bytes)?;
-  toml::de::from_slice::<Expense>(&bytes)
+  toml::de::from_slice<Expense>(&bytes)
     .and_then(|expense| expense.insert_sqlite(db))
     .map_err(|_| {
-      toml::de::from_slice::<Income>(&bytes)
+      toml::de::from_slice<Income>(&bytes)
         .and_then(|income| income.insert_sqlite(db))
         .map_err(|_| {
-          toml::de::from_slice::<Budget>(&bytes)
+          toml::de::from_slice<Budget>(&bytes)
             .and_then(|budget| budget.insert_sqlite(db))
         })
     })
