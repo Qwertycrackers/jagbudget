@@ -14,7 +14,7 @@ use std::fs::File;
 use std::io;
 use std::collections::HashMap;
 
-type BoxError = Box<std::error::Error>
+type BoxError = Box<std::error::Error>;
 
 #[derive(Deserialize)]
 struct Expense {
@@ -103,30 +103,36 @@ fn is_db_correct(db: &Connection) -> bool {
 fn parse_into_sqlite<R: io::Read>( mut file: R, db: &Connection) -> Result<(), Box<std::error::Error>> {
   let mut bytes = Vec::new();
   file.read_to_end(&mut bytes)?;
-  toml::de::from_slice<Expense>(&bytes)
+  toml::de::from_slice::<Expense>(&bytes)
     .and_then(|expense| expense.insert_sqlite(db))
     .map_err(|_| {
-      toml::de::from_slice<Income>(&bytes)
+      toml::de::from_slice::<Income>(&bytes)
         .and_then(|income| income.insert_sqlite(db))
         .map_err(|_| {
-          toml::de::from_slice<Budget>(&bytes)
+          toml::de::from_slice::<Budget>(&bytes)
             .and_then(|budget| budget.insert_sqlite(db))
         })
     })
 }
 
 trait InsertSql {
-  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError>
+  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError>;
 }
 
 impl InsertSql for Expense {
-
+  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError> {
+    unimplemented!()
+  }
 }
 
 impl InsertSql for Income {
-
+  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError> {
+    unimplemented!()
+  }
 }
 
 impl InsertSql for Budget {
-
+  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError> {
+    unimplemented!()
+  }
 }
