@@ -34,6 +34,8 @@ struct Income {
 /// Configuration of budgetary targets for a time period.
 #[derive(Deserialize)]
 struct Budget {
+  start: NaiveDate,
+  end: NaiveDate,
   /// The target proportion and flat amounts of savings
   savings: Alloc,
   /// The target proportion and flat amounts of spending
@@ -43,7 +45,7 @@ struct Budget {
 }
 
 /// An allocation of money.
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct Alloc {
   /// This allocation as a proportion. Min or max based on context.
   rate: f32,
@@ -104,6 +106,13 @@ fn init_db(db: &Connection) -> () {
       amount INTEGER,
       category TEXT,
       day DATE
+    );
+    CREATE TABLE budget (
+      start DATE,
+      end DATE,
+      savings BLOB,
+      expenditure BLOB,
+      spend_categories BLOB
     );
   ").unwrap();
 }
