@@ -121,7 +121,7 @@ fn is_db_correct(db: &Connection) -> bool {
   false // Always re-initialize db
 }
 
-fn parse_into_sqlite<R: io::Read>( mut file: R, db: &Connection) -> Result<(), toml::de::Error> {
+fn parse_into_sqlite<R: io::Read>(mut file: R, db: &Connection) -> Result<(), toml::de::Error> {
   let mut bytes = Vec::new();
   file.read_to_end(&mut bytes).unwrap();
   toml::de::from_slice::<Expense>(&bytes)
@@ -143,18 +143,32 @@ trait InsertSql {
 
 impl InsertSql for Expense {
   fn insert_sql(&self, db: &Connection) -> Result<(), BoxError> {
-    unimplemented!()
+    db.execute(
+      "INSERT INTO expense VALUE (?, ?, ?, ?);",
+      &[self.amount, &self.category, &self.detail, self.day]
+    ).map(|_| ())
   }
 }
 
 impl InsertSql for Income {
   fn insert_sql(&self, db: &Connection) -> Result<(), BoxError> {
-    unimplemented!()
+    db.execute(
+      "INSERT INTO income VALUE (?, ?, ?, ?);",
+      &[self.amount, &self.category, self.day]
+    ).map(|_| ())
   }
 }
 
 impl InsertSql for Budget {
   fn insert_sql(&self, db: &Connection) -> Result<(), BoxError> {
-    unimplemented!()
+    db.execute(
+      "INSERT INTO budget VALUE (?, ?, ?, ?);",
+      &[self.start, 
+        self.end, 
+        toml::ser::to_vec(&self.savings).unwrap(),
+        toml::ser::to_vec(&self.expenditure).unwrap(),
+        toml::ser::to_vec(&self.spend_categories).unwrap(),
+      ]
+    ).map(|_| ())
   }
 }
