@@ -121,19 +121,20 @@ fn is_db_correct(db: &Connection) -> bool {
   false // Always re-initialize db
 }
 
-fn parse_into_sqlite<R: io::Read>( mut file: R, db: &Connection) -> Result<(), BoxError> {
+fn parse_into_sqlite<R: io::Read>( mut file: R, db: &Connection) -> Result<(), toml::de::Error> {
   let mut bytes = Vec::new();
-  file.read_to_end(&mut bytes)?;
-  toml::de::from_slice<Expense>(&bytes)
-    .and_then(|expense| expense.insert_sqlite(db))
-    .map_err(|_| {
-      toml::de::from_slice<Income>(&bytes)
-        .and_then(|income| income.insert_sqlite(db))
-        .map_err(|_| {
-          toml::de::from_slice<Budget>(&bytes)
-            .and_then(|budget| budget.insert_sqlite(db))
+  file.read_to_end(&mut bytes).unwrap();
+  toml::de::from_slice::<Expense>(&bytes)
+    .map(|expense| expense.insert_sql(db))
+    .or_else(|_| {
+      toml::de::from_slice::<Income>(&bytes)
+        .map(|income| income.insert_sql(db))
+        .or_else(|_| {
+          toml::de::from_slice::<Budget>(&bytes)
+            .map(|budget| budget.insert_sql(db))
         })
     })
+    .map(|_| ())
 }
 
 trait InsertSql {
