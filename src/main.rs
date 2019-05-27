@@ -8,14 +8,14 @@ extern crate comp;
 
 use chrono::naive::{NaiveDate};
 use chrono::Datelike;
-use serde::{Serialize, Deserialize};
 use serde_derive::{Serialize, Deserialize};
-use clap::{Arg, App, SubCommand};
+use clap::{Arg, App};
 use rusqlite::{Connection, params};
 use std::fs::File;
 use std::io;
 use std::collections::HashMap;
-use comp::{option, result};
+
+mod report;
 
 type BoxError = Box<std::error::Error>;
 
@@ -43,7 +43,7 @@ struct Budget {
   /// The target proportion and flat amounts of spending
   expenditure: Alloc,
   /// Spending allocations by category
-  spend_categories: Option<HashMap<String, Alloc>>,
+  spend_categories: HashMap<String, Alloc>,
 }
 
 /// An allocation of money.
@@ -70,6 +70,8 @@ fn main() -> Result<(), BoxError> {
     .about("Ingests weakly-structured income and expense records for analysis.")
     .arg(Arg::with_name("files")
          .short("f")
+         .multiple(true)
+         .value_delimiter(" ")
          .help("List of the file names that contain inputs.")
          .takes_value(true)
     )
@@ -93,14 +95,13 @@ fn main() -> Result<(), BoxError> {
         Err(e) => eprint!("File {} couldn't be opened!\n", f.to_string_lossy()),
         Ok(r) => match r {
           Ok(()) => (), 
-          Err(e) => eprint!("File '{}' did not parse or insert correctly! Reason: {:?}\n",
+          Err(_) => eprint!("File '{}' did not parse or insert correctly! Reason: {:?}\n",
                             f.to_string_lossy(), e),
         },
       }
     });
   }
-  // TODO: Produce report 
-  Ok(())
+  report::report(io::stdout().lock(), &db)
 }
 
 fn rectify_db(db: &Connection) -> () {
@@ -116,12 +117,14 @@ fn init_db(db: &Connection) -> () {
       detail TEXT,
       day DATE
     );
+    CREATE INDEX IF NOT EXISTS expense_day ON expense (day DESC);
     DROP TABLE IF EXISTS income;
     CREATE TABLE income (
       amount INTEGER,
       category TEXT,
       day DATE
     );
+    CREATE INDEX IF NOT EXISTS income_day ON income (day DESC);
     DROP TABLE IF EXISTS budget;
     CREATE TABLE budget (
       start DATE,
@@ -129,11 +132,13 @@ fn init_db(db: &Connection) -> () {
       expenditure BLOB,
       spend_categories BLOB
     );
+    CREATE INDEX IF NOT EXISTS budget_start ON budget (start DESC);
     DROP TABLE IF EXISTS checkpoint;
     CREATE TABLE checkpoint (
       assets INTEGER,
       day DATE
     );
+    CREATE INDEX IF NOT EXISTS checkpoint_day ON checkpoint (day DESC);
   ").unwrap();
 }
 
@@ -166,7 +171,7 @@ fn parse_into_sqlite<R: io::Read>(mut file: R, db: &Connection) -> Result<(), to
   let mut bytes = Vec::new();
   file.read_to_end(&mut bytes).unwrap();
   toml::de::from_slice::<Expense>(&bytes)
-    .map(|expense| dbg!(expense).insert_sql(db).unwrap())
+    .map(|expense| expense.insert_sql(db).unwrap())
     .or_else(|_| {
       toml::de::from_slice::<Income>(&bytes)
         .map(|income| income.insert_sql(db).unwrap())
@@ -198,7 +203,7 @@ impl InsertSql for Expense {
 impl InsertSql for Income {
   fn insert_sql(&self, db: &Connection) -> Result<(), rusqlite::Error> {
     db.execute(
-      "INSERT INTO income VALUES (?, ?, ?, ?);",
+      "INSERT INTO income VALUES (?, ?, ?);",
       params![self.income, &self.category, self.day.num_days_from_ce()]
     ).map(|_| ())
   }
@@ -207,7 +212,7 @@ impl InsertSql for Income {
 impl InsertSql for Budget {
   fn insert_sql(&self, db: &Connection) -> Result<(), rusqlite::Error> {
     db.execute(
-      "INSERT INTO budget VALUES (?, ?, ?);",
+      "INSERT INTO budget VALUES (?, ?, ?, ?);",
       params![
         self.start.num_days_from_ce(), 
         toml::ser::to_vec(&self.savings).unwrap(),
