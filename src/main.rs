@@ -4,19 +4,22 @@ extern crate toml;
 extern crate clap;
 extern crate rusqlite;
 extern crate chrono;
+extern crate comp;
 
 use chrono::naive::{NaiveDate};
+use chrono::Datelike;
 use serde::{Serialize, Deserialize};
 use serde_derive::{Serialize, Deserialize};
 use clap::{Arg, App, SubCommand};
-use rusqlite::{Connection};
+use rusqlite::{Connection, params};
 use std::fs::File;
 use std::io;
 use std::collections::HashMap;
+use comp::{option, result};
 
 type BoxError = Box<std::error::Error>;
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Expense {
   amount: u32,
   category: String,
@@ -26,7 +29,7 @@ struct Expense {
 
 #[derive(Deserialize)]
 struct Income {
-  amount: u32,
+  income: u32,
   category: String,
   day: NaiveDate,
 }
@@ -35,7 +38,6 @@ struct Income {
 #[derive(Deserialize)]
 struct Budget {
   start: NaiveDate,
-  end: NaiveDate,
   /// The target proportion and flat amounts of savings
   savings: Alloc,
   /// The target proportion and flat amounts of spending
@@ -51,6 +53,13 @@ struct Alloc {
   rate: f32,
   /// This allocation as a flat value in cents. Min or max based on context.
   flat: u32,
+}
+
+/// Checkpoint re-sets the exact quantity of liquid assets at a single time, to handle innaccurate reporting.
+#[derive(Deserialize)]
+pub struct Checkpoint {
+  assets: u32,
+  day: NaiveDate,
 }
 
 fn main() -> Result<(), BoxError> {
@@ -81,8 +90,12 @@ fn main() -> Result<(), BoxError> {
     file_names.for_each( |f| {
       let file = File::open(f);
       match file.map(|x| parse_into_sqlite( x, &db)) {
-        Err(_) => eprint!("File was badly-formed or couldn't be opened: {}", f.to_string_lossy()),
-        _ => (), // No need to print an error
+        Err(e) => eprint!("File {} couldn't be opened!\n", f.to_string_lossy()),
+        Ok(r) => match r {
+          Ok(()) => (), 
+          Err(e) => eprint!("File '{}' did not parse or insert correctly! Reason: {:?}\n",
+                            f.to_string_lossy(), e),
+        },
       }
     });
   }
@@ -96,79 +109,120 @@ fn rectify_db(db: &Connection) -> () {
 
 fn init_db(db: &Connection) -> () {
   db.execute_batch("
+    DROP TABLE IF EXISTS expense;
     CREATE TABLE expense (
       cost INTEGER,
       category TEXT,
       detail TEXT,
       day DATE
     );
+    DROP TABLE IF EXISTS income;
     CREATE TABLE income (
       amount INTEGER,
       category TEXT,
       day DATE
     );
+    DROP TABLE IF EXISTS budget;
     CREATE TABLE budget (
       start DATE,
-      end DATE,
       savings BLOB,
       expenditure BLOB,
       spend_categories BLOB
+    );
+    DROP TABLE IF EXISTS checkpoint;
+    CREATE TABLE checkpoint (
+      assets INTEGER,
+      day DATE
     );
   ").unwrap();
 }
 
 fn is_db_correct(db: &Connection) -> bool {
-  false // Always re-initialize db
+  let budget = db.query_row(
+    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'budget';",
+    params![],
+    |row| row.get::<usize, i32>(0).map(|count| count > 0)
+  ).unwrap_or(false);
+  let income = db.query_row(
+    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'income';",
+    params![],
+    |row| row.get::<usize, i32>(0).map(|count| count > 0)
+  ).unwrap_or(false);
+  let expense = db.query_row(
+    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'expense';",
+    params![],
+    |row| row.get::<usize, i32>(0).map(|count| count > 0)
+  ).unwrap_or(false);
+  let checkpoint = db.query_row(
+    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'checkpoint';",
+    params![],
+    |row| row.get::<usize, i32>(0).map(|count| count > 0)
+  ).unwrap_or(false);
+
+  expense && income && budget && checkpoint
 }
 
 fn parse_into_sqlite<R: io::Read>(mut file: R, db: &Connection) -> Result<(), toml::de::Error> {
   let mut bytes = Vec::new();
   file.read_to_end(&mut bytes).unwrap();
   toml::de::from_slice::<Expense>(&bytes)
-    .map(|expense| expense.insert_sql(db))
+    .map(|expense| dbg!(expense).insert_sql(db).unwrap())
     .or_else(|_| {
       toml::de::from_slice::<Income>(&bytes)
-        .map(|income| income.insert_sql(db))
+        .map(|income| income.insert_sql(db).unwrap())
         .or_else(|_| {
           toml::de::from_slice::<Budget>(&bytes)
-            .map(|budget| budget.insert_sql(db))
+            .map(|budget| budget.insert_sql(db).unwrap())
+            .or_else(|_| {
+              toml::de::from_slice::<Checkpoint>(&bytes)
+                .map(|checkpoint| checkpoint.insert_sql(db).unwrap())
+            })
         })
     })
     .map(|_| ())
 }
 
 trait InsertSql {
-  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError>;
+  fn insert_sql(&self, db: &Connection) -> Result<(), rusqlite::Error>;
 }
 
 impl InsertSql for Expense {
-  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError> {
+  fn insert_sql(&self, db: &Connection) -> Result<(), rusqlite::Error> {
     db.execute(
-      "INSERT INTO expense VALUE (?, ?, ?, ?);",
-      &[self.amount, &self.category, &self.detail, self.day]
+      "INSERT INTO expense VALUES (?, ?, ?, ?);",
+      params![self.amount, &self.category, &self.detail, self.day.num_days_from_ce()]
     ).map(|_| ())
   }
 }
 
 impl InsertSql for Income {
-  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError> {
+  fn insert_sql(&self, db: &Connection) -> Result<(), rusqlite::Error> {
     db.execute(
-      "INSERT INTO income VALUE (?, ?, ?, ?);",
-      &[self.amount, &self.category, self.day]
+      "INSERT INTO income VALUES (?, ?, ?, ?);",
+      params![self.income, &self.category, self.day.num_days_from_ce()]
     ).map(|_| ())
   }
 }
 
 impl InsertSql for Budget {
-  fn insert_sql(&self, db: &Connection) -> Result<(), BoxError> {
+  fn insert_sql(&self, db: &Connection) -> Result<(), rusqlite::Error> {
     db.execute(
-      "INSERT INTO budget VALUE (?, ?, ?, ?);",
-      &[self.start, 
-        self.end, 
+      "INSERT INTO budget VALUES (?, ?, ?);",
+      params![
+        self.start.num_days_from_ce(), 
         toml::ser::to_vec(&self.savings).unwrap(),
         toml::ser::to_vec(&self.expenditure).unwrap(),
         toml::ser::to_vec(&self.spend_categories).unwrap(),
       ]
+    ).map(|_| ())
+  }
+}
+
+impl InsertSql for Checkpoint {
+  fn insert_sql(&self, db: &Connection) -> Result<(), rusqlite::Error> {
+    db.execute(
+      "INSERT INTO checkpoint VALUES (?, ?)",
+      params![self.assets, self.day.num_days_from_ce()]
     ).map(|_| ())
   }
 }
