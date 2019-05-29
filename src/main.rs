@@ -16,6 +16,7 @@ use std::io;
 use std::collections::HashMap;
 
 mod report;
+mod utils;
 
 type BoxError = Box<std::error::Error>;
 
