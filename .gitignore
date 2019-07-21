@@ -1,3 +1,5 @@
+.env
+db
 /target
 **/*.rs.bk
 sess
