@@ -10,5 +10,6 @@ serde_derive = "^1.0.91"
 toml = "^0.5.0"
 clap = "^2.33.0"
 chrono = { version = "^0.4.6", features = ["serde"]}
-rusqlite = "^0.18.0"
+# rusqlite = "^0.18.0"
+diesel = { version = "^1.4.2", features = ["sqlite"]}
 comp = "0.2"
